@@ -1,9 +1,20 @@
 import re
+import requests
+import requests
+from dotenv import load_dotenv
+import os
+import pprint
+url = "https://openapi.naver.com/v1/search/shop?query=네네치킨&sort=dsc&start_page=3&display_len=3"
 
-url = "https://openapi.naver.com/v1/search/shop?query=네네치킨&sort=dsc&start_page=1&display_len=500"
+load_dotenv()
 
-# 정규 표현식으로 query 파라미터 추출
-match = re.search(r'query=([^&]+)', url)
-if match:
-    query_value = match.group(1)  # '양말' 추출
-    print(query_value)
+headers = {
+        "X-Naver-Client-Id": os.getenv("X-Naver-Client-Id"),
+        "X-Naver-Client-Secret": os.getenv("X-Naver-Client-Secret")
+    }
+
+response = requests.get(url,headers=headers)
+
+pprint.pprint(response.json())
+
+print(response.json()["total"])

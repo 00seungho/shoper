@@ -2,7 +2,7 @@ import streamlit as st
 import pandas as pd
 import io
 import math
-
+import random
 import requests
 from dotenv import load_dotenv
 import os
@@ -76,39 +76,26 @@ def create_market_analysis_report(data, querry):
     sheet['F2'].border = Border(top=Side(style='medium'))
     sheet['G2'].border = Border(top=Side(style='medium'))
 
-    sheet['I3'] = "범례"
-    sheet['I4'] = "최대값"
-    sheet['I5'] = "최소값"
-
+    sheet['I2'] = "범례"
+    sheet['I3'] = "최대값"
+    sheet['I4'] = "최소값"
+    sheet['I5'] = "결측치"
+    fill_red = PatternFill(start_color="FFCCCC", end_color="FFCCCC", fill_type="solid")
     fill_green = PatternFill(start_color="CCFFCC", end_color="CCFFCC", fill_type="solid")
     fill_yellow = PatternFill(start_color="FFFF99", end_color="FFFF99", fill_type="solid")
 
-    sheet['I4'].fill =fill_yellow
-    sheet['I5'].fill =fill_green
-    
+    sheet['I3'].fill =fill_yellow
+    sheet['I4'].fill =fill_green
+    sheet['I5'].fill= fill_red
     alignment_center = Alignment(horizontal='center', vertical='center')
+    sheet['I2'].alignment = alignment_center
+
     sheet['I3'].alignment = alignment_center
     sheet['I4'].alignment = alignment_center
     sheet['I5'].alignment = alignment_center
-
     #상품 int로 변경    
     data = list(map(lambda x: {**x, "상품 최저가": int(x["상품 최저가"])}, data))
     data = list(map(lambda x: {**x, "상품 최저가": int(x["상품 최고가"])}, data))
-    # I열의 열 너비를 텍스트에 맞춰 자동 조정 (공백 두 칸 추가)
-
-    max_length = 0
-    column = 'I'
-    for cell in sheet[column]:
-        try:
-            if len(str(cell.value)) > max_length:
-                max_length = len(str(cell.value))
-        except:
-            pass
-    adjusted_width = (max_length + 2) + 5000  # 추가 공간(공백 두 칸)을 고려하여 열 너비 조정
-    sheet.column_dimensions[column].width = adjusted_width
-
-    
-   
 
     for idx in range(2,len(data)+2+6,1):
         sheet[f'H{str(idx)}'].border = Border(left=Side(style='medium'))
@@ -200,6 +187,7 @@ def create_market_analysis_report(data, querry):
 
     # 셀 스타일링
     currency_format = '"₩ "#,##0'
+    fill_red = PatternFill(start_color="FFCCCC", end_color="FFCCCC", fill_type="solid")
     fill_green = PatternFill(start_color="CCFFCC", end_color="CCFFCC", fill_type="solid")
     fill_yellow = PatternFill(start_color="FFFF99", end_color="FFFF99", fill_type="solid")
 
@@ -232,7 +220,7 @@ def create_market_analysis_report(data, querry):
 
 
     
-    fill_red = PatternFill(start_color="FFCCCC", end_color="FFCCCC", fill_type="solid")
+    
     for row in range(6, len(data) + 7):
         cell = sheet[f'C{row}']
         cell.alignment = alignment_center
@@ -270,9 +258,34 @@ def create_market_analysis_report(data, querry):
     # 열 너비 자동 조정
 
    # 열 너비 조정 함수
-    for column_cells in sheet.columns:
-        length = max(len(str(cell.value))*1.1 for cell in column_cells)
-        sheet.column_dimensions[column_cells[0].column_letter].width = length
+    columns_to_adjust = ['B', 'C', 'D', 'E','F', 'H', 'I']
+    defe_column_width = sheet.column_dimensions['A'].width
+    for col in columns_to_adjust:
+        # 현재 열의 너비를 가져옴 (None일 경우 기본 너비 사용)
+        max_length = 0  # 해당 열에서 가장 긴 값의 길이 저장
+        
+        # 해당 열의 모든 셀을 순회하면서 가장 긴 값의 길이 찾기
+        for cell in sheet[col]:
+            if cell.value and isinstance(cell.value, str) and cell.value.startswith('=AVERAGE'):
+                continue  # 다음 반복으로 건너뛰기
+            if cell.value:
+                max_length = max(max_length, len(str(cell.value)))
+            
+        # 1.1배 증가 후 올림
+        new_width = math.ceil(max_length * 1.1)
+        
+        # 새로운 열 너비 설정
+        sheet.column_dimensions[col].width = defe_column_width+new_width
+    for cell in sheet["G"]:
+        if cell.value and isinstance(cell.value, str) and cell.value.startswith('=HYPERLINK'):
+        # 수식에서 하이퍼링크 표시 텍스트를 추출
+            match = re.search(r'HYPERLINK\(".*?",\s*"(.*?)"\)', cell.value)
+            if match:
+                display_text = match.group(1)
+                max_length = max(max_length, len(str(display_text)))
+        new_width = math.ceil(max_length*1.1)
+        sheet.column_dimensions["G"].width = defe_column_width+new_width
+                
 
     # 파일 저장
     filename = f"{querry}_상품_분석_제품_시장조사.xlsx"
@@ -292,10 +305,11 @@ def create_market_analysis_report(data, querry):
         - 데이터 프레임의 셀 안에 텍스트가 중앙 정렬되도록 설정해주세요.
         - 조건부 포맷팅을 적용해, 값에 따라 텍스트 색상이나 배경색이 달라지게 해주세요.
         - 상품 최고가 행의 {min_highest_price} 값은 초록색으로 표시해주세요.
-        - 상품 최고가 행의 {max_highest_price} 값은 노란색으로 표시해주세요.
+        - 상품 최고가 행의 {max_highest_price} 값은 #FCB101색상을 적용해서 표시해주세요.
         - 상품 최저가 행의 {min_lowest_price} 값은 초록색으로 표시해 주세요.
-        - 상품 최저가 행의 {max_lowest_price} 값은 초록색으로 표시해 주세요.
+        - 상품 최저가 행의 {max_lowest_price} 값은  #FCB101색상을 적용해서 표시해 주세요.
         - 표의 테두리를 얇고 선명하게 표시해주세요.
+        그리고 이런 말을 덧붙여줘, 다음 상품은 엑셀로 정렬된 상품중 상위 5개의 결과를 요약한 내용입니다.
         반드시 HTML의 형식으로 출력해 사용자가 보기 쉽게 보여주세요 
 ""","filename":filename}
     except Exception as e:
@@ -347,14 +361,30 @@ def parse_shoping_data(data):
 
 
 def sort_function(query):
+    
     sort_dict =None
+
     items = get_context()["저장된 아이템 목록"]["items"]
-    if query["정렬 쿼리"] == "최고가":
-        sort_dict = sorted(items, key=lambda x: int(x["상품 최저가"]))
+    if query["정렬 쿼리"] == "검색순":
+        sort_dict = items
+
+    elif query["정렬 쿼리"] == "최고가":
+        if query["정렬할 기준"] =="올림":
+            sort_dict = sorted(items, key=lambda x: int(x["상품 최고가"]))
+        elif query["정렬할 기준"] =="내림":
+            sort_dict = sorted(items, key=lambda x: int(x["상품 최고가"]),reverse=False)
+        else:
+            sort_dict = items
+
     elif query["정렬 쿼리"] == "최저가":
         sort_dict = sorted(items, key=lambda x: int(x["상품 최저가"]), reverse=True)
-    elif query["정렬 쿼리"] == "검색순":
-        sort_dict = items
+        if query["정렬할 기준"] =="올림":
+            sort_dict = sorted(items, key=lambda x: int(x["상품 최저가"]))
+        elif query["정렬할 기준"] =="내림":
+            sort_dict = sorted(items, key=lambda x: int(x["상품 최저가"]),reverse=False)
+        else:
+            sort_dict = items
+            
     len_item = int(query["저장할 개수"])
     # 엑셀 파일로 다운로드하는 기능 추가
     return create_market_analysis_report(sort_dict[:len_item],get_querr_item())
@@ -581,33 +611,47 @@ def make_sentence(inputs):
 
 def pick_sort_query(inputs):
     sort_list = [
-        "최고가",
         "최저가",
-        "검색순"
+        "최고가"
+    ]
+    sort_col = [
+        "올림",
+        "내림"
     ]
     template = """
-        너는 사용자의 질문에서 정렬 쿼리와 저장할 갯수를 찾는 모델이야.
+        너는 사용자의 질문에서 정렬 쿼리와 정렬할 기준과 저장할 갯수를 찾는 모델이야.
         반드시 JSON 형식으로 대답해줘.
         정렬 쿼리 리스트는 다음과 같아
+
         {sort_list}
+
+
         정렬 쿼리는 반드시 정렬 쿼리 리스트 내에서 반환해줘.
         만약 사용자의 질문에서 정렬 쿼리를 찾지 못한다면 키 값만 형식에 맞게 채워주고 값에는 ""로 채워줘
         만약 사용자의 질문에서 저장할 개수를 찾지 못한다면 키 값만 형식에 맞게 채워주고 값에는 ""로 채워줘
 
+        정렬할 기준 리스트는 다음과 같아.
+
+        {sort_col}
+
+        만약 사용자의 질문에서 정렬할 기준을 찾지 못한다면 키 값만 형식에 맞게 채워주고 값에는 ""로 채워줘
+        
+        
         반드시 다음 형식으로 대답해줘:
         {{
             "정렬 쿼리": "정렬쿼리 리스트 내의 값",
             "저장할 개수": "문장에서 뽑아낸 저장할 개수"
+            "정렬할 기준" : "정렬할 기준 리스트 내의 값"
         }}
         예시는 다음과 같아:
-        사용자: 검색된 아이템을 최저가 순으로 10개 저장해줘
-        답변: {{"정렬 쿼리": "최저가", "저장할 개수": 10}}
+        사용자: 검색된 아이템을 최저가를 10개 저장해줘
+        답변: {{"정렬 쿼리": "최저가", "저장할 개수": 10, "정렬할 기준":""}}
 
-        사용자: 네네치킨 검색결과를 최고가 순으로 20개 저장해줘
-        답변: {{"정렬 쿼리": "최고가", "저장할 개수": 20}}
+        사용자: 네네치킨 검색결과를 최고가를 올림순으로 20개 저장해줘
+        답변: {{"정렬 쿼리": "최고가", "저장할 개수": 20, "정렬할 기준":"올림"}}
         
-        사용자: 검색결과를 검색순으로 5개 저장해줘
-        답변: {{"정렬 쿼리": "검색순", "저장할 개수": 5}}
+        사용자: 검색결과 내림차순해서 5개 저장해줘
+        답변: {{"정렬 쿼리": "", "저장할 개수": 5,"정렬할 기준":"내림"}}
 
         이제 너가 대답해줄 차례야
         사용자: {question} 
@@ -617,23 +661,29 @@ def pick_sort_query(inputs):
     llm = ChatOllama(model="gemma2:9b", temperature=0, base_url="http://127.0.0.1:11434/") #http://127.0.0.1:11434
     chain = RunnableMap({
     "sort_list": lambda x: x["sort_list"],
+    "sort_col": lambda x: x["sort_col"],
     "question": lambda x: x["question"]
     }) | prompt | llm  
-    chat_msg = chain.invoke({'question': f"{inputs}","sort_list":f"{',' .join(sort_list)}"}).content
+    chat_msg = chain.invoke({'question': f"{inputs}","sort_list":f"{',' .join(sort_list)}","sort_col":f"{',' .join(sort_col)}"}).content
     sort_re = re.search(r'\{.*?\}', chat_msg, re.DOTALL)
     order_dict = json.loads(sort_re.group(0))
     msg = ""
     err_msg=""
     err_msg_save_len=""
+    if order_dict["정렬 쿼리"] !="" and order_dict["정렬 쿼리"]:
+        order_dict["정렬할 기준"] = "내림"
     if order_dict["정렬 쿼리"] == "":
         order_dict["정렬 쿼리"] = "검색순"
-        err_msg = "정렬 기준이 없어 검색순으로 정렬하겠습니다."
+        err_msg = "질문에서 검색 정렬 기준을 찾을 수 없어 검색순으로 정렬하겠습니다."
     if order_dict["저장할 개수"] == "":
         order_dict["저장할 개수"] = 10
-        err_msg_save_len = "저장 개수가 없어 10개를 저장하겠습니다."
+        err_msg_save_len = "질문에서 저장 개수를 찾을 수 없어 10개를 정렬하겠습니다."
+    if order_dict["정렬할 기준"] == "":
+        order_dict["정렬할 기준"] = "올림"
+        err_msg_save_len = "질문에서 데이터를 정렬할 기준을 찾을 수 없어 데이터를 올림차순으로 저장하겠습니다."
     msg += "" if order_dict['정렬 쿼리'] == "" else f"{order_dict['정렬 쿼리']}순으로"
     msg += "" if order_dict["저장할 개수"] == "" else f"{order_dict['저장할 개수']}개 만큼 정리해 Excel 파일로 저장하겠습니다."+err_msg+err_msg_save_len
-    return {"msg":msg,"정렬 쿼리":order_dict["정렬 쿼리"],"저장할 개수":order_dict["저장할 개수"]}
+    return {"msg":msg,"정렬 쿼리":order_dict["정렬 쿼리"],"저장할 개수":order_dict["저장할 개수"],"정렬할 기준":order_dict["정렬할 기준"]}
 
 def select_sentence(inputs, order:dict):
     template = """
@@ -664,6 +714,9 @@ def select_sentence(inputs, order:dict):
         if 'items' not in item:
             return
         set_context({"JSON에 저장된 아이템의 총 개수":f"{item['total']}","저장된 아이템 목록":item})
+        random_pick = random.choice(get_context()["저장된 아이템 목록"]["items"])
+        chat_msg = chain.invoke({'context': f"다음Json은 검색결과중 랜덤으로 하나를 고른거야. 랜덤한 결과로 하나를 출력하겠습니다 한다음 json을 잘 정리해서 HTML 형식으로 사용자에게 반환해줘.{random_pick} 이미지 태그를 이용해 상품 이미지를 보여주는것도 좋을 것 같아. 생성결과 최상단엔 반드시 검색된 상품중 랜덤한 상품 하나를 골라 출력하겠습니다 라는 문장을 넣어줘"}).content
+        st.markdown(chat_msg,unsafe_allow_html=True)
     elif order["명령"] == "문서작성":
         query = pick_sort_query(inputs)
         chat_msg = chain.invoke({'context': f"다음 내용을 사용자에게 잘 전달해줘 사용자의 질문에서 {query['msg']}"}).content#TODO:이거 스트림릿 채팅창에 나오게 해주세요
@@ -694,7 +747,7 @@ def select_sentence(inputs, order:dict):
 import streamlit as st
 
 # 페이지 설정
-st.set_page_config(page_title="검색 및 정리 자동화 LLM 모델", layout="centered")
+st.set_page_config(page_title="대리포트 📄", layout="centered")
 
 # 스타일 설정
 # 페이지 설정
@@ -757,15 +810,15 @@ st.markdown(
     """,
     unsafe_allow_html=True
 )
-
-st.markdown("<h1 class='blue-title'>검색 도우미 LLM 어시스턴트</h1>", unsafe_allow_html=True)
+st.markdown("<h1 class='blue-title'>보고서 대리 작성 인공지능 서비스</h1>", unsafe_allow_html=True)
+st.markdown("<h2 class='blue-title'>대리포트 📄</h2>", unsafe_allow_html=True)
 
 # 사용자 질문 입력 (파란색 라벨)
 # 하단에 입력 필드와 버튼을 배치
 st.markdown("<div class='bottom-container'>", unsafe_allow_html=True)
 user_query = st.text_input("<span class='blue-text'>🔎 검색이 필요하신가요? 검색결과 정리가 필요하신가요?</span>", "", label_visibility="collapsed")
 submit_button = st.button("Submit")
-
+st.markdown("<p class='blue-text'>보고서 대리 작성 인공지능 대리포트 📄 입니다. 무엇을 도와드릴까요?</p>", unsafe_allow_html=True)
 if submit_button:
     # 버튼을 비활성화 시킴
     st.session_state['button_disabled'] = True
@@ -775,7 +828,6 @@ if submit_button:
         pick = pick_sentence(user_query)
         select_sentence(user_query, pick)
         st.session_state['button_disabled'] = False
-else:
-    st.markdown("<p class='blue-text'>질문을 입력해 주세요</p>", unsafe_allow_html=True)
+    
 
 st.markdown("</div>", unsafe_allow_html=True)

@@ -1,3 +1,8 @@
+import streamlit as st
+import pandas as pd
+import io
+import math
+
 import requests
 from dotenv import load_dotenv
 import os
@@ -9,7 +14,6 @@ from langchain.prompts import ChatPromptTemplate
 from langchain.schema.runnable import RunnableMap
 from langchain_community.chat_models import ChatOllama
 from langchain.schema.runnable import RunnableMap
-import pprint
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain.embeddings.sentence_transformer import SentenceTransformerEmbeddings
 from langchain.vectorstores import FAISS
@@ -18,21 +22,47 @@ import warnings
 import itertools
 import openpyxl
 from openpyxl.worksheet.table import Table, TableStyleInfo
-# LangChainDeprecationWarning 경고 숨기기
-warnings.filterwarnings("ignore", category=UserWarning, module="langchain")
-
-# FutureWarning 경고 숨기기
-warnings.filterwarnings("ignore", category=FutureWarning, module="transformers")
-warnings.filterwarnings("ignore")
-
-# 다른 경고도 필요에 따라 추가할 수 있습니다.
-
-
-##gpt 생성시 딕셔너리 외의 단어가 나올 수 있기 때문에 {.*}로 딕셔너리만 파싱한다.
-
 import openpyxl
 from openpyxl.styles import Alignment, Font, PatternFill, Border, Side
 from openpyxl.utils import get_column_letter
+import pandas as pd
+
+def makemarkdown(string):
+    first = "<p class='blue-text'>"
+    
+    last = "</p>"
+
+    return first + string + last
+
+if 'g_context' not in st.session_state:
+    st.session_state.g_context = {}
+
+if 'total_item' not in st.session_state:
+    st.session_state.total_item = None
+
+if 'querr_item' not in st.session_state:
+    st.session_state.querr_item = None
+
+# g_context 설정 및 가져오기 함수
+def set_context(value):
+    st.session_state.g_context = value
+
+def get_context():
+    return st.session_state.g_context
+
+# total_item 설정 및 가져오기 함수
+def set_total_item(value):
+    st.session_state.total_item = value
+
+def get_total_item():
+    return st.session_state.total_item
+
+# querr_item 설정 및 가져오기 함수
+def set_querr_item(value):
+    st.session_state.querr_item = value
+
+def get_querr_item():
+    return st.session_state.querr_item
 
 def create_market_analysis_report(data, querry):
     workbook = openpyxl.Workbook()
@@ -52,14 +82,20 @@ def create_market_analysis_report(data, querry):
 
     fill_green = PatternFill(start_color="CCFFCC", end_color="CCFFCC", fill_type="solid")
     fill_yellow = PatternFill(start_color="FFFF99", end_color="FFFF99", fill_type="solid")
+
     sheet['I4'].fill =fill_yellow
     sheet['I5'].fill =fill_green
+    
     alignment_center = Alignment(horizontal='center', vertical='center')
     sheet['I3'].alignment = alignment_center
     sheet['I4'].alignment = alignment_center
     sheet['I5'].alignment = alignment_center
 
+    #상품 int로 변경    
+    data = list(map(lambda x: {**x, "상품 최저가": int(x["상품 최저가"])}, data))
+    data = list(map(lambda x: {**x, "상품 최저가": int(x["상품 최고가"])}, data))
     # I열의 열 너비를 텍스트에 맞춰 자동 조정 (공백 두 칸 추가)
+
     max_length = 0
     column = 'I'
     for cell in sheet[column]:
@@ -71,7 +107,8 @@ def create_market_analysis_report(data, querry):
     adjusted_width = (max_length + 2) + 5000  # 추가 공간(공백 두 칸)을 고려하여 열 너비 조정
     sheet.column_dimensions[column].width = adjusted_width
 
-
+    
+   
 
     for idx in range(2,len(data)+2+6,1):
         sheet[f'H{str(idx)}'].border = Border(left=Side(style='medium'))
@@ -161,7 +198,6 @@ def create_market_analysis_report(data, querry):
     max_highest_price = max(data, key=lambda x: x['상품 최고가'])['상품 최고가']
 
 
-
     # 셀 스타일링
     currency_format = '"₩ "#,##0'
     fill_green = PatternFill(start_color="CCFFCC", end_color="CCFFCC", fill_type="solid")
@@ -169,6 +205,21 @@ def create_market_analysis_report(data, querry):
 
     # 각 행에서 최고가와 최저가를 찾아 색상 적용 및 통화 형식 적용
     currency_format = '"₩"#,##0'
+
+    for idx in range(6,len(data)+7):
+        cell = sheet[f'E{idx}']
+        if cell.value == max_highest_price:
+            cell.fill = fill_yellow
+        elif cell.value == min_highest_price:
+            cell.fill = fill_green
+
+
+    for idx in range(6,len(data)+7):
+        cell = sheet[f'F{idx}']
+        if cell.value == max_lowest_price:
+            cell.fill = fill_yellow
+        elif cell.value == min_lowest_price:
+            cell.fill = fill_green
 
     # E 열의 모든 셀에 대해 통화 형식을 적용
     for row in range(7, len(data)+8):
@@ -178,24 +229,9 @@ def create_market_analysis_report(data, querry):
         #F열이 상품 최저가
         sheet[f'F{row}'].number_format = currency_format
 
-    fill_green = PatternFill(start_color="CCFFCC", end_color="CCFFCC", fill_type="solid")  # 초록색 (최솟값)
-    fill_yellow = PatternFill(start_color="FFFF99", end_color="FFFF99", fill_type="solid")  # 노란색 (최댓값)
-
-    for idx, value in enumerate(data, start=7):
-        cell = sheet[f'E{idx}']
-        if cell.value == max_highest_price:
-            cell.fill = fill_yellow
-        elif cell.value == min_highest_price:
-            cell.fill = fill_green
 
 
-    for idx, value in enumerate(data, start=7):
-        cell = sheet[f'F{idx}']
-        if cell.value == max_lowest_price:
-            cell.fill = fill_yellow
-        elif cell.value == min_lowest_price:
-            cell.fill = fill_green
-
+    
     fill_red = PatternFill(start_color="FFCCCC", end_color="FFCCCC", fill_type="solid")
     for row in range(6, len(data) + 7):
         cell = sheet[f'C{row}']
@@ -220,7 +256,7 @@ def create_market_analysis_report(data, querry):
         if cell.value == "":
             cell.fill = fill_red
 
-    for row in range(6, len(data) + 7):
+    for row in range(6, len(data) + 8):
         cell = sheet[f'B{row}']
         cell.alignment = alignment_center
         if cell.value == "":
@@ -232,57 +268,40 @@ def create_market_analysis_report(data, querry):
 
     # 테두리 스타일 적용 (데이터 테두리만)
     # 열 너비 자동 조정
-    for col in sheet.columns:
-        max_length = 0
-        column = col[0].column_letter  # 열의 첫 번째 셀의 열 문자
-        for cell in col:
-            try:
-                if len(str(cell.value)) > max_length:
-                    max_length = len(str(cell.value))
-            except:
-                pass
-        adjusted_width = (max_length + 2)+3
-        sheet.column_dimensions[column].width = adjusted_width
 
-    # 엑셀 파일 저장
-    workbook.save("선풍기_제품_시장조사_최종_수정.xlsx")
-
+   # 열 너비 조정 함수
+    for column_cells in sheet.columns:
+        length = max(len(str(cell.value))*1.1 for cell in column_cells)
+        sheet.column_dimensions[column_cells[0].column_letter].width = length
 
     # 파일 저장
     filename = f"{querry}_상품_분석_제품_시장조사.xlsx"
+    df = pd.DataFrame(data)
+    df = df[["상품 이름", "브랜드", "제조사", "상품 최고가", "상품 최저가", "쇼핑몰 정보"]]
+    df = df.head(5)
     try:
         workbook.save(filename)
-        return {f"msg": f"{filename}파일로 성공적으로 저장되었습니다. 사용자 에게는 다음 데이터 리스트를 5열 까지만 정리해서 데이터 프레임으로 보여주세요. 데이터 리스트f{data}"}
+        return {f"msg": f"""사용자 에게 다음 데이터프레임을 정리해서 사용자에게 보기좋게 보여주세요.
+                보여주는 형식은 HTML 문법으로 보여줄거야.
+                데이터프레임은 다음과 같습니다.\n\n
+                {df}
+        
+        
+        상세한 지침은 다음과 같습니다.
+        - 컬럼 헤더를 굵게 표시하고, 셀 간의 간격을 적당히 유지해주세요.
+        - 데이터 프레임의 셀 안에 텍스트가 중앙 정렬되도록 설정해주세요.
+        - 조건부 포맷팅을 적용해, 값에 따라 텍스트 색상이나 배경색이 달라지게 해주세요.
+        - 상품 최고가 행의 {min_highest_price} 값은 초록색으로 표시해주세요.
+        - 상품 최고가 행의 {max_highest_price} 값은 노란색으로 표시해주세요.
+        - 상품 최저가 행의 {min_lowest_price} 값은 초록색으로 표시해 주세요.
+        - 상품 최저가 행의 {max_lowest_price} 값은 초록색으로 표시해 주세요.
+        - 표의 테두리를 얇고 선명하게 표시해주세요.
+        반드시 HTML의 형식으로 출력해 사용자가 보기 쉽게 보여주세요 
+""","filename":filename}
     except Exception as e:
         return {"msg": "저장에 실패했습니다."}
 
 load_dotenv()
-
-g_context = {}
-total_item = None
-def set_context(value):
-    global g_context  # g_context를 전역 변수로 사용
-    g_context = value
-
-def get_context():
-    global g_context 
-    return g_context
-
-def set_total_item(value):
-    global total_item  # g_context를 전역 변수로 사용
-    total_item = value
-
-def get_total_item():
-    global total_item 
-    return total_item
-
-def set_querr_item(value):
-    global querr_item  # g_context를 전역 변수로 사용
-    querr_item = value
-
-def get_querr_item():
-    global querr_item 
-    return querr_item
 
 
 
@@ -337,6 +356,7 @@ def sort_function(query):
     elif query["정렬 쿼리"] == "검색순":
         sort_dict = items
     len_item = int(query["저장할 개수"])
+    # 엑셀 파일로 다운로드하는 기능 추가
     return create_market_analysis_report(sort_dict[:len_item],get_querr_item())
 
 
@@ -401,7 +421,7 @@ def make_url(query:dict):
                 {"msg":"검색 엔진으로 검색하지 못했습니다."}
             pageable = total // 100
             pageable += 1
-            
+            #검색 개수 최대 제한
             if pageable >= 5:
                 pageable = 5
 
@@ -519,7 +539,8 @@ def pick_sentence(inputs):
     order_dict_re = re.search(r'\{.*?\}', chat_msg, re.DOTALL)
     human_read = chat_msg.replace(order_dict_re.group(0),"")
     human_read = re.sub(r'^\s*\n', '', human_read, flags=re.MULTILINE)
-    print(human_read) #TODO 이거 스트림릿 채팅에 나오게 해주세요
+    st.markdown(makemarkdown(human_read), unsafe_allow_html=True) #TODO 이거 스트림릿 채팅에 나오게 해주세요
+    
     order_dict = json.loads(order_dict_re.group(0))
     return order_dict
 
@@ -611,7 +632,7 @@ def pick_sort_query(inputs):
         order_dict["저장할 개수"] = 10
         err_msg_save_len = "저장 개수가 없어 10개를 저장하겠습니다."
     msg += "" if order_dict['정렬 쿼리'] == "" else f"{order_dict['정렬 쿼리']}순으로"
-    msg += "" if order_dict["저장할 개수"] == "" else f"{order_dict['저장할 개수']}만큼 정리해 Excel 파일로 저장하겠습니다."+err_msg+err_msg_save_len
+    msg += "" if order_dict["저장할 개수"] == "" else f"{order_dict['저장할 개수']}개 만큼 정리해 Excel 파일로 저장하겠습니다."+err_msg+err_msg_save_len
     return {"msg":msg,"정렬 쿼리":order_dict["정렬 쿼리"],"저장할 개수":order_dict["저장할 개수"]}
 
 def select_sentence(inputs, order:dict):
@@ -630,61 +651,131 @@ def select_sentence(inputs, order:dict):
         querry =  make_query(inputs)
         
         chat_msg = chain.invoke({'context': f"{querry['msg']}"}).content
-        print(chat_msg) #TODO:이거 스트림릿 채팅창에 나오게 해주세요
+        st.markdown(chat_msg, unsafe_allow_html=True) #TODO:이거 스트림릿 채팅창에 나오게 해주세요
         #여기까지 쿼리 만드는 구간
         if "검색 쿼리" not in querry:
             return 
         urls = make_url(querry)
         chat_msg = chain.invoke({'context': f"{urls['msg']}"}).content
-        print(chat_msg) #TODO:이거 스트림릿 채팅창에 나오게 해주세요
+        st.markdown(makemarkdown(chat_msg), unsafe_allow_html=True) #TODO:이거 스트림릿 채팅창에 나오게 해주세요
         item = request_for_serach_engen(urls)
         chat_msg = chain.invoke({'context': f"{item['msg']}"}).content
-        print(chat_msg) #TODO:이거 스트림릿 채팅창에 나오게 해주세요
+        st.markdown(makemarkdown(chat_msg), unsafe_allow_html=True) #TODO:이거 스트림릿 채팅창에 나오게 해주세요
         if 'items' not in item:
             return
         set_context({"JSON에 저장된 아이템의 총 개수":f"{item['total']}","저장된 아이템 목록":item})
     elif order["명령"] == "문서작성":
         query = pick_sort_query(inputs)
         chat_msg = chain.invoke({'context': f"다음 내용을 사용자에게 잘 전달해줘 사용자의 질문에서 {query['msg']}"}).content#TODO:이거 스트림릿 채팅창에 나오게 해주세요
-        print(chat_msg) #TODO:이거 스트림릿 채팅창에 나오게 해주세요
+        st.markdown(makemarkdown(chat_msg), unsafe_allow_html=True) #TODO:이거 스트림릿 채팅창에 나오게 해주세요
         sort_result = sort_function(query)
         chat_msg = chain.invoke({'context': f"너는 지금 성공적으로 엑셀을 저장했어. 메세지를 사용자 화면에 띄워줘{sort_result['msg']}"}).content#TODO:이거 스트림릿 채팅창에 나오게 해주세요
-        print(chat_msg) #TODO:이거 스트림릿 채팅창에 나오게 해주세요
+        st.markdown(makemarkdown(chat_msg), unsafe_allow_html=True) #TODO:이거 스트림릿 채팅창에 나오게 해주세요
+    
+        with open(sort_result["filename"], "rb") as file:
+            file_data = file.read()
+            # 스트림릿의 download_button을 사용하여 파일을 다운로드할 수 있게 함
+            st.download_button(
+                label=f"{sort_result['filename']}",
+                data=file_data,
+                file_name=f"{sort_result['filename']}",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            )
+
     elif order["명령"] == "정리":
         
-        print(make_sentence(inputs))
+        st.markdown(makemarkdown(make_sentence(inputs)), unsafe_allow_html=True)
     else:
         return
 
 
 
+# Streamlit 페이지 구성
+import streamlit as st
 
-inputs = "빽다방 기프티콘을 검색해줘"
-a = pick_sentence(inputs)
-select_sentence(inputs,a)
+# 페이지 설정
+st.set_page_config(page_title="검색 및 정리 자동화 LLM 모델", layout="centered")
 
-# inputs = "검색된 내용중 첫번째 내용에 대해 알려줘"
-# print("사용자 질문:",inputs)
-# a = pick_sentence(inputs)
-# select_sentence(inputs,a)
- 
-inputs = "검색된 내용을 엑셀로 정리해줘"
-a = pick_sentence(inputs)
-select_sentence(inputs,a)
+# 스타일 설정
+# 페이지 설정
 
-# query = make_query("삼성 갤럭시 워치3 40개 가격 내림차순으로 정리해서 엑셀로 저장해줘")
-# return_url = make_url(query)
-# # print(return_url)
-# context = request_for_serach_engen(return_url)
+# 스타일 설정
+st.markdown(
+    """
+    <style>
+    body {
+        background-color: #f7f7f7;
+        color: #333333;
+        font-family: 'Helvetica Neue', sans-serif;
+    }
+    .stApp {
+        background-color: #f7f7f7;
+    }
+    .stTextInput > div > div > input {
+        background-color: #ffffff;
+        color: #333333;
+        border: 1px solid #cccccc;
+        border-radius: 8px;
+        padding: 10px;
+        font-size: 16px;
+    }
+    .stTextInput > label {
+        color: #555555;
+        font-weight: bold;
+    }
+    .stButton button {
+        background-color: #007bff;
+        color: white;
+        border: none;
+        border-radius: 8px;
+        padding: 10px 20px;
+        font-size: 16px;
+        font-weight: bold;
+        box-shadow: 0px 2px 5px rgba(0, 0, 0, 0.1);
+        transition: background-color 0.3s;
+    }
+    .stButton button:hover {
+        background-color: #0056b3;
+    }
+    .blue-text {
+        color: #000000;
+        font-size: 18px;
+    }
+    .blue-title {
+        color: #007bff;
+        font-size: 24px;
+        font-weight: bold;
+        margin-bottom: 20px;
+    }
+    
+     header {
+        background-color: #d9d9d9; /* 헤더 배경 색상을 회색 계열로 설정 */
+        padding: 10px; /* 패딩을 추가하여 여백을 확보 */
+        box-shadow: 0px 2px 5px rgba(0, 0, 0, 0.1); /* 약간의 그림자를 추가 */
+    }
+    </style>
+    """,
+    unsafe_allow_html=True
+)
 
-# print(make_sentence(context))
-# query = make_query("조용필 앨범 최저가 검색해줘")
+st.markdown("<h1 class='blue-title'>검색 도우미 LLM 어시스턴트</h1>", unsafe_allow_html=True)
 
+# 사용자 질문 입력 (파란색 라벨)
+# 하단에 입력 필드와 버튼을 배치
+st.markdown("<div class='bottom-container'>", unsafe_allow_html=True)
+user_query = st.text_input("<span class='blue-text'>🔎 검색이 필요하신가요? 검색결과 정리가 필요하신가요?</span>", "", label_visibility="collapsed")
+submit_button = st.button("Submit")
 
-# 
-# response = requests.get(base_url,headers=headers)
-# # print(response.content.decode("utf-8"))
+if submit_button:
+    # 버튼을 비활성화 시킴
+    st.session_state['button_disabled'] = True
+    if user_query:
+        st.markdown(f"<p class='blue-text'> 입력된 질문: {user_query}</p>", unsafe_allow_html=True)
+        st.markdown("<p class='blue-text'>질문을 처리 중입니다...</p>", unsafe_allow_html=True)
+        pick = pick_sentence(user_query)
+        select_sentence(user_query, pick)
+        st.session_state['button_disabled'] = False
+else:
+    st.markdown("<p class='blue-text'>질문을 입력해 주세요</p>", unsafe_allow_html=True)
 
-# modified_text = re.sub(r'<.*?>', '', response.content.decode("utf-8"))
-# print(modified_text)
-# print(parse_shoping_data(json.loads(modified_text)))
+st.markdown("</div>", unsafe_allow_html=True)
